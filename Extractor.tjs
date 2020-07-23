@@ -1,0 +1,126 @@
+Plugins.link(System.exePath + "fstat.dll");
+
+var Extract_file_list = [];
+//二维数组 第一层为一个字典用于存放目录 第二层为一个数组用于存放目录下的文件
+var Last_jump_point = [];
+//一维数组 每个值为一个字典(file:文件,line:行数)文件最后一个值用于存放最后一个跳转点 当该分支完成后跳转到最后一个值存放的位置继续执行
+
+var possible_ext = [
+    ".jpg",
+    ".png",
+    ".ks",
+    ".tjs",
+    ".ttf",
+    ".edu"
+];
+
+var TJSmatchFileName = new RegExp("([\"\'])+(.)*([\"\'])", "gi");
+//匹配文件名
+var matchPunctuationInFileName = new RegExp("[\"\']+", "gi");
+//匹配"和'
+var matchExePath = new RegExp(System.exePath,"gi");
+//匹配游戏执行目录
+
+//从XP3文件格式中转换为正常文件夹名称 返回一个文件夹名称，如果为多层文件夹，则一起返回Path:传入Storages.getPlacedPath方法返回的路径
+function getFolderName(path){
+    //
+}
+
+//TJS:判断是否是跳转或者执行语句，如果是的话返回跳转的目标文件，如果不是则返回false,如果文件名无匹配结果同样返回false
+function TJSisAJumporExec(expression) {
+    //Scripts.execStorage(name) KAGLoadScript(name) KAGLoadScriptOnce(name) kag.process(name) kag.callExtraConductor(name)
+    if (expression.indexOf("Scripts.evalStorage") != -1 || expression.indexOf("Scripts.execStorage") != -1 || expression.indexOf("KAGLoadScript") != -1 || expression.indexOf("KAGLoadScriptOnce") != -1 || expression.indexOf("kag.process") != -1 || expression.indexOf("kag.callExtraConductor") != -1) {
+        var matchResult = TJSmatchFileName.match(expression); //匹配结果
+        if (matchResult.count > 0) {
+            return Storages.extractStorageName(matchPunctuationInFileName.replace(matchResult[0], "")); //如果匹配到了就返回执行的文件名
+        } else {
+            return false;
+        }
+    }
+    return false;
+}
+
+//TJS:返回 **任何** 方法的参数 注意:该方法返回的不一定是文件，如果匹配到了参数就返回参数，如果没有匹配到内容就返回false
+function TJSisHaveParam(expression) {
+    //只能匹配带""或''的参数，且只能匹配第一个
+    //playse
+    var matchResult = TJSmatchFileName.match(expression); //匹配结果
+    if (matchResult.count > 0) {
+        return Storages.extractStorageName(matchPunctuationInFileName.replace(matchResult[0], ""));
+    } else {
+        return false;
+    }
+}
+
+//TJS:检查该行是否有文件 parma:%[line:用于存放当前行]
+function TJScheckThisLine(expression,line){
+    //如果该语句为跳转语句
+    var JumpOrExecCheck = TJSisAJumporExec(expression);
+    if (JumpOrExecCheck != false){
+        if (Storages.isExistentStorage(JumpOrExecCheck) == true){
+            Last_jump_point.add(%["file" => JumpOrExecCheck,"line" => line]);
+            return "JumpOrExec";
+        }
+    }
+}
+
+//KAG:返回无参数前标的值 例如:exp="1+1"返回1+1
+function KAGreturnWithoutParam(input) {
+    var firstPunctuation;
+    var secondPunctuation;
+    if (input.indexOf("='") != -1) {
+        firstPunctuation = input.indexOf("='");
+        secondPunctuation = input.indexOf("'", firstPunctuation + 2);
+    } else {
+        firstPunctuation = input.indexOf('="');
+        secondPunctuation = input.indexOf('"', firstPunctuation + 2);
+    }
+    var removeParam = input.substring(firstPunctuation + 2, secondPunctuation - firstPunctuation - 2);
+    return removeParam;
+}
+
+var KAGmatchFileName = new RegExp("storage=[\"\']+(.)*([\"\'])", "gi");
+//匹配KAG中各种文件名
+var KAGmatchExpression = new RegExp("exp=[\"\']+(.)*([\"\'])", "gi");
+//匹配KAG中各自exp参数
+
+//KAG:判断是否是跳转或者执行语句，如果是的话返回跳转的目标文件，如果不是则返回false,如果文件名无匹配结果同样返回false
+function KAGisAJumporExec(expression) {
+    //[call storage="name"] [jump storage="name"] [eval exp=""]
+    if (expression.indexOf("call") != -1 || expression.indexOf("jump") != -1) {
+        var matchResult = KAGmatchFileName.match(expression);
+        if (matchResult.count > 0) {
+            return Storages.extractStorageName(KAGreturnWithoutParam(matchResult[0]));
+        } else {
+            return false;
+        }
+    } else if (expression.indexOf("eval") != -1) {
+        var matchExpressionResult = KAGmatchExpression.match(expression);
+        if (matchExpressionResult.count > 0) {
+            System.inform(KAGreturnWithoutParam(matchExpressionResult[0]));
+            return TJSisAJumporExec(KAGreturnWithoutParam(matchExpressionResult[0]));
+        } else {
+            return false;
+        }
+    }
+    return false;
+}
+
+//KAG:尝试提取其中的storage参数，如果有则返回参数内容，如果没有则返回false
+function KAGisHaveStorage(expression) {
+    //@bgm storage="name" @image storage="name" @se storage="name" ...
+    var matchResult = KAGmatchFileName.match(expression);
+    if (matchResult.count > 0) {
+        return Storages.extractStorageName(KAGreturnWithoutParam(matchResult[0]));
+    } else {
+        return false;
+    }
+}
+
+//尝试逐个文件读取
+/*
+从[文件]开始读取
+判断是TJS还是KAG:
+    如果是TJS:
+    如果是KAG:
+*/
